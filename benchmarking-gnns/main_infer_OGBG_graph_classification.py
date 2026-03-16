@@ -532,11 +532,15 @@ def main():
         
         
         # convert bg to csr format
-        if dgl.__version__ < "0.5":
-            g_csr = test_bg.adjacency_matrix_scipy(transpose=False, fmt="csr", return_edge_ids=True)
-        else:
-            raise NotImplementedError("edge ids hasn't been tested for dgl.version >= 0.5")
-            g_csr = test_bg.adj(transpose=False, scipy_fmt="csr")
+        # Build SciPy CSR from edge list directly — works with all DGL versions.
+        # data = edge IDs (matching the original return_edge_ids=True behaviour).
+        import scipy.sparse as sp
+        src, dst = test_bg.edges()
+        eid = np.arange(test_bg.num_edges())
+        g_csr = sp.csr_matrix(
+            (eid, (src.numpy(), dst.numpy())),
+            shape=(test_bg.num_nodes(), test_bg.num_nodes()),
+        )
         
         # Transform csr indptr to machsuite format
         a = g_csr.indptr[0: g_csr.indptr.size-1]

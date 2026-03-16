@@ -19,7 +19,7 @@ import numpy as np
     
 # Sends a message of node feature h
 # Equivalent to => return {'m': edges.src['h']}
-msg = fn.copy_src(src='h', out='m')
+msg = fn.copy_u('h', 'm')
 reduce = fn.mean('m', 'h')
 
 class NodeApplyModule(nn.Module):
