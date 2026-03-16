@@ -279,24 +279,109 @@ void wr_output(TYPE rst_temp_arry[FEATS_OUT],
 }
 */
 
+// fused version of agg_feat_in + update_agg + update_agg_sum
+void agg_update_sum_fused(hls::stream<vec_ft_in_t>& ft_in_agg_stream,
+                          hls::stream<node_t>& nod_src_stream2,
+                          TYPE w_array[FEATS_IN][FEATS_OUT],
+                          node_index_t nidx_begin,
+                          node_index_t nidx_end,
+                          hls::stream<vec_ft_out_t>& rst_agg_stream)
+{
+    fused_nloop: for(node_index_t n = nidx_begin; n < nidx_end; n++){
+
+        node_t nod_src_temp = nod_src_stream2.read();
+        edge_index_t tmp_begin = nod_src_temp.edge_begin;
+        edge_index_t tmp_end   = nod_src_temp.edge_end;
+
+        if(tmp_end != tmp_begin){
+
+            // -------- aggregate features --------
+            TYPE ft_h_agg[FEATS_IN];
+            const int w_ft_in = W_FT_IN;
+            #pragma HLS array_partition variable=ft_h_agg cyclic factor=w_ft_in dim=1
+
+            agg_ft_in_eloop: for(edge_index_t e = tmp_begin; e < tmp_end; e++){
+
+                agg_ft_in_blk: for(int i = 0; i < FEATS_IN / W_FT_IN; i++){
+                    #pragma HLS pipeline II=1
+
+                    vec_ft_in_t ft_in_vec = ft_in_agg_stream.read();
+
+                    agg_ft_in_lane: for(int j = 0; j < W_FT_IN; j++){
+                        #pragma HLS UNROLL
+
+                        int idx = i * W_FT_IN + j;
+                        TYPE ft_h_temp = (e == tmp_begin) ? (TYPE)0 : ft_h_agg[idx];
+                        ft_h_agg[idx] = ft_h_temp + ft_in_vec[j];
+                    }
+                }
+            }
+
+            // -------- update/apply --------
+            TYPE rst_agg[D][FEATS_OUT];
+            #pragma HLS array_partition variable=rst_agg cyclic factor=2 dim=1
+            #pragma HLS array_partition variable=rst_agg cyclic factor=128 dim=2
+
+            update_agg_l0: for(int k = 0; k < FEATS_IN / D; k++){
+
+                update_agg_l1: for(int kd = 0; kd < D; kd++){
+                    #pragma HLS pipeline II=1 rewind
+                    #pragma HLS UNROLL factor=2
+
+                    TYPE ft_h_agg_temp = ft_h_agg[k * D + kd];
+
+                    update_agg_l2: for(int j = 0; j < FEATS_OUT; j++){
+                        #pragma HLS UNROLL
+
+                        TYPE rst_agg_temp = (k == 0) ? (TYPE)0 : rst_agg[kd][j];
+                        rst_agg[kd][j] = rst_agg_temp + ft_h_agg_temp * w_array[k * D + kd][j];
+                    }
+                }
+            }
+
+            // -------- sum D partial rows --------
+            TYPE rst_agg_sum[FEATS_OUT];
+            #pragma HLS array_partition variable=rst_agg_sum cyclic factor=16 dim=1
+
+            update_agg_sum_l0: for(int kd = 0; kd < D; kd++){
+
+                update_agg_sum_l1: for(int j = 0; j < FEATS_OUT; j++){
+                    #pragma HLS pipeline II=1 rewind
+                    #pragma HLS UNROLL factor=16
+
+                    TYPE rst_sum_temp = (kd == 0) ? (TYPE)0 : rst_agg_sum[j];
+                    rst_agg_sum[j] = rst_sum_temp + rst_agg[kd][j];
+                }
+            }
+
+            // -------- pack result (no activation here) --------
+            wr_rst_agg_stm_l0: for(int i = 0; i < FEATS_OUT / W_FT_OUT; i++){
+                #pragma HLS pipeline II=1
+
+                vec_ft_out_t rst_agg_sum_temp;
+
+                wr_rst_agg_stm_l1: for(int j = 0; j < W_FT_OUT; j++){
+                    #pragma HLS UNROLL
+                    rst_agg_sum_temp[j] = rst_agg_sum[i * W_FT_OUT + j];
+                }
+
+                rst_agg_stream << rst_agg_sum_temp;
+            }
+        }
+    }
+}
+
 // read nod_src from memory
 void read_nod_src(node_t nod_src[N_NODES],
-                // node_index_t n,
                 node_index_t nidx_begin,
                 node_index_t nidx_end,
-                hls::stream<node_t> nod_src_stream[6]){
+                hls::stream<node_t> nod_src_stream[4]){
     rd_nod_src_nloop: for(node_index_t n=nidx_begin; n<nidx_end; n++){
         #pragma HLS pipeline II=1
         node_t nod_src_n = nod_src[n];
 
-        // nod_src_stream[0] << nod_src_n;
-        // nod_src_stream[1] << nod_src_n;
-        // nod_src_stream[2] << nod_src_n;
-        // nod_src_stream[3] << nod_src_n;
-
-        for (int i = 0; i < 6; i++){
+        for (int i = 0; i < 4; i++){
             #pragma HLS UNROLL
-
             nod_src_stream[i] << nod_src_n;
         }
     }
@@ -353,256 +438,37 @@ void read_feat_in_agg(// edge_src_t edge_src[N_EDGES],
     }
 }
 
-// aggregate features
-void agg_feat_in(hls::stream<vec_ft_in_t>& ft_in_agg_stream,
-                    // edge_index_t tmp_begin,
-                    // edge_index_t tmp_end,
-                    hls::stream<node_t>& nod_src_stream2,
-                    node_index_t nidx_begin,
-                    node_index_t nidx_end,
-                    // TYPE ft_h_agg_stream[FEATS_IN]
-                    hls::stream<vec_ft_in_t>& ft_h_agg_stream)
+// write results memory + fused activation
+void write_rst_mem(hls::stream<vec_ft_out_t>& rst_agg_stream,
+                   node_index_t nidx_begin,
+                   node_index_t nidx_end,
+                   hls::stream<node_t>& nod_src_stream,
+                   vec_ft_out_t rst_mat[N_NODES*FEATS_OUT/W_FT_OUT])
 {
-
-    for(node_index_t n=nidx_begin; n<nidx_end; n++){
-
-        node_t nod_src_temp = nod_src_stream2.read();
-        edge_index_t tmp_begin = nod_src_temp.edge_begin;
-        edge_index_t tmp_end = nod_src_temp.edge_end;
-
-        if(tmp_end != tmp_begin){
-
-            vec_ft_in_t ft_h_agg[FEATS_IN/W_FT_IN];
-            // traverse all the src nodes
-            agg_ft_in_eloop: for(edge_index_t e=tmp_begin; e<tmp_end; e++){
-                
-                // // aggregrate features
-                // agg_ft_in: for(int i=0; i<FEATS_IN/W_FT_IN; i++){
-                //     #pragma HLS pipeline II=1
-
-                //     vec_ft_in_t ft_h_temp = (e == tmp_begin) ? 0 : ft_h_agg[i];
-                //     // vec_ft_in_t ft_in_agg = ft_in_agg_stream.read();
-                //     // ft_h_agg[i] = ft_h_temp + ft_in_agg;
-                //     ft_h_agg[i] = ft_h_temp + ft_in_agg_stream.read();
-                // }
-
-                // read from ft_in_agg_stream
-                vec_ft_in_t ft_in_agg[FEATS_IN/W_FT_IN];
-                rd_ft_in_stm: for(int i = 0; i < FEATS_IN/W_FT_IN; i++){
-                    #pragma HLS pipeline II=1
-
-                    ft_in_agg[i] = ft_in_agg_stream.read();
-                }
-
-                // aggregrate features
-                agg_ft_in: for(int i=0; i<FEATS_IN/W_FT_IN; i++){
-                    #pragma HLS pipeline II=1
-
-                    vec_ft_in_t ft_h_temp = (e == tmp_begin) ? 0 : ft_h_agg[i];
-                    ft_h_agg[i] = ft_h_temp + ft_in_agg[i];
-                }
-            }
-
-            // write the result of aggregated results to stream
-            wr_ft_h_agg_stm: for(int i=0; i<FEATS_IN/W_FT_IN; i++){
-                #pragma HLS pipeline II=1
-
-                // for (int j = 0; j < W_FT_IN; j++){
-
-                //     ft_h_agg_stream[i*W_FT_IN+j] = ft_h_agg[i][j];
-                // }
-
-                ft_h_agg_stream << ft_h_agg[i];
-            }
-        }
-    }
-}
-
-// update/apply phase for the aggrated results
-void update_agg(TYPE w_array[FEATS_IN][FEATS_OUT],
-                // TYPE ft_h_agg_stream[FEATS_IN],
-                hls::stream<vec_ft_in_t>& ft_h_agg_stream,
-                // edge_index_t tmp_begin,
-                // edge_index_t tmp_end,
-                node_index_t nidx_begin,
-                node_index_t nidx_end,
-                hls::stream<node_t>& nod_src_stream4,
-                // TYPE rst_agg_stream[FEATS_OUT]
-                // hls::stream<vec_ft_out_t>& rst_agg_stream
-                // hls::stream<vec_ft_out_t>& rst_agg_p1_stream
-                hls::stream<vec_ft_out_full_t>& rst_agg_p1_stream)
-{
-
-    update_agg_nloop: for(node_index_t n=nidx_begin; n<nidx_end; n++){
-        node_t nod_src_temp = nod_src_stream4.read();
-        edge_index_t tmp_begin = nod_src_temp.edge_begin;
-        edge_index_t tmp_end = nod_src_temp.edge_end;
-        
-        if(tmp_end != tmp_begin){
-
-            // receive the aggregated features and convert it from a vector of width W_FT_IN to an array of scalar
-            TYPE ft_h_agg[FEATS_IN];
-            const int w_ft_in = W_FT_IN;
-            #pragma HLS array_partition variable=ft_h_agg cyclic factor=w_ft_in dim=1
-
-            rd_ft_h_agg_stm_l0: for(int i=0; i<FEATS_IN/W_FT_IN; i++){
-                #pragma HLS pipeline II=1
-
-                vec_ft_in_t ft_h_temp = ft_h_agg_stream.read();
-
-                rd_ft_h_agg_stm_l1: for (int j = 0; j < W_FT_IN; j++){
-                    #pragma HLS UNROLL
-
-                    ft_h_agg[i*W_FT_IN + j] = ft_h_temp[j];
-                }
-            }
-
-            // update/apply phase for the aggrated results
-            TYPE rst_agg[D][FEATS_OUT];
-            #pragma HLS array_partition variable=rst_agg cyclic factor=2 dim=1
-            #pragma HLS array_partition variable=rst_agg cyclic factor=128 dim=2
-            update_agg_l0: for(int k=0; k<FEATS_IN/D; k++){
-
-                update_agg_l1: for (int kd = 0; kd < D; kd++){
-                    #pragma HLS pipeline II=1 rewind
-                    #pragma HLS UNROLL factor=2
-
-                    TYPE ft_h_agg_temp = ft_h_agg[k*D + kd];
-
-                    update_agg_l2: for(int j=0; j<FEATS_OUT; j++){
-                        #pragma HLS UNROLL
-
-                        TYPE rst_agg_temp = (k == 0) ? 0 : rst_agg[kd][j];
-
-                        // rst_agg[kd][j] = rst_agg_temp + ft_h_agg[k*D + kd] * w_array[k*D + kd][j];
-                        rst_agg[kd][j] = rst_agg_temp + ft_h_agg_temp * w_array[k*D + kd][j];
-                    }
-                }
-            }
-
-            // // write the result of agg update p1 to stream
-            // wr_rst_agg_p1_stm_l0: for (int kd = 0; kd < D; kd++){
-            //     wr_rst_agg_p1_stm_l1: for(int i=0; i<FEATS_OUT/W_FT_OUT; i++){
-            //         #pragma HLS pipeline II=1
-
-            //         vec_ft_out_t rst_agg_vec_temp;
-
-            //         wr_rst_agg_p1_stm_l2: for (int j = 0; j < W_FT_OUT; j++){
-            //             #pragma HLS UNROLL
-
-            //             rst_agg_vec_temp[j] = rst_agg[kd][i*W_FT_OUT + j];
-            //         }
-                    
-            //         rst_agg_p1_stream << rst_agg_vec_temp;
-            //     }
-            // }
-
-            // write the result of agg update p1 to stream
-            wr_rst_agg_p1_stm_l0: for (int kd = 0; kd < D; kd++){
-                #pragma HLS pipeline II=1
-
-                vec_ft_out_full_t rst_agg_vec_temp;
-
-                wr_rst_agg_p1_stm_l1: for(int j=0; j<FEATS_OUT; j++){
-                    #pragma HLS UNROLL
-
-                    rst_agg_vec_temp[j] = rst_agg[kd][j];
-                }
-
-                rst_agg_p1_stream << rst_agg_vec_temp;
-            }
-        }
-    }
-}
-
-void update_agg_sum(// hls::stream<vec_ft_out_t>& rst_agg_p1_stream,
-                    hls::stream<vec_ft_out_full_t>& rst_agg_p1_stream,
-                    node_index_t nidx_begin,
-                    node_index_t nidx_end,
-                    hls::stream<node_t>& nod_src_stream6,
-                    hls::stream<vec_ft_out_t>& rst_agg_stream)
-{
-    
-    update_agg_sum_nloop: for(node_index_t n=nidx_begin; n<nidx_end; n++){
-        node_t nod_src_temp = nod_src_stream6.read();
-        edge_index_t tmp_begin = nod_src_temp.edge_begin;
-        edge_index_t tmp_end = nod_src_temp.edge_end;
-
-        if(tmp_end != tmp_begin){
-
-            TYPE rst_agg[D][FEATS_OUT];
-            #pragma HLS array_partition variable=rst_agg complete dim=2
-            rd_agg_p1_stm_l0: for (int kd = 0; kd < D; kd++){
-                #pragma HLS pipeline II=1
-
-                vec_ft_out_full_t rst_agg_vec_temp = rst_agg_p1_stream.read();
-
-                rd_agg_p1_stm_l1: for(int j=0; j<FEATS_OUT; j++){
-                    #pragma HLS UNROLL
-                    rst_agg[kd][j] = rst_agg_vec_temp[j];
-                }
-            }
-
-            // sum the D rows of results
-            TYPE rst_agg_sum[FEATS_OUT];
-            #pragma HLS array_partition variable=rst_agg_sum cyclic factor=16 dim=1
-            update_agg_sum_l0: for (int kd = 0; kd < D; kd++){
-
-                update_agg_sum_l1: for(int j=0; j<FEATS_OUT; j++){
-                    #pragma HLS pipeline II=1 rewind
-                    #pragma HLS UNROLL factor=16
-
-                    TYPE rst_sum_temp = (kd == 0) ? 0 : rst_agg_sum[j];
-
-                    rst_agg_sum[j] = rst_sum_temp + rst_agg[kd][j];
-                }
-            }
-
-            // write rst_agg to stream and convert it from an array of scalar to vector of width W_FT_OUT
-            wr_rst_agg_stm_l0: for(int i=0; i<FEATS_OUT/W_FT_OUT; i++){
-                #pragma HLS pipeline II=1
-
-                vec_ft_out_t rst_agg_sum_temp;
-
-                wr_rst_agg_stm_l1: for (int j = 0; j < W_FT_OUT; j++){
-                    #pragma HLS UNROLL
-                    
-                    #ifdef ACTIVATION
-                        rst_agg_sum_temp[j] = relu(rst_agg_sum[i*W_FT_OUT + j]);
-                    #else
-                        rst_agg_sum_temp[j] = rst_agg_sum[i*W_FT_OUT + j];
-                    #endif
-                }
-
-                rst_agg_stream << rst_agg_sum_temp;
-            }
-        }
-    }
-}
-
-// write results memory
-void write_rst_mem(// TYPE rst_agg_stream[FEATS_OUT],
-                         hls::stream<vec_ft_out_t>& rst_agg_stream,
-                        // node_index_t n,
-                        node_index_t nidx_begin,
-                        node_index_t nidx_end,
-                        hls::stream<node_t>& nod_src_stream,
-                        // TYPE rst_mat[N_NODES*FEATS_OUT]
-                        vec_ft_out_t rst_mat[N_NODES*FEATS_OUT/W_FT_OUT])
-{
-
-    for(node_index_t n=nidx_begin; n<nidx_end; n++){
+    for(node_index_t n = nidx_begin; n < nidx_end; n++){
 
         node_t nod_src_temp = nod_src_stream.read();
         edge_index_t tmp_begin = nod_src_temp.edge_begin;
-        edge_index_t tmp_end = nod_src_temp.edge_end;
+        edge_index_t tmp_end   = nod_src_temp.edge_end;
 
         if(tmp_end != tmp_begin){
-            wr_rst_mem: for (int i = 0; i < FEATS_OUT/W_FT_OUT; i++){
+            wr_rst_mem: for(int i = 0; i < FEATS_OUT / W_FT_OUT; i++){
                 #pragma HLS pipeline II=1
-                // vec_ft_out_t rst_agg_vec = rst_agg_stream.read();
 
-                rst_mat[n*FEATS_OUT/W_FT_OUT +i] = rst_agg_stream.read();
+                vec_ft_out_t rst_vec = rst_agg_stream.read();
+                vec_ft_out_t rst_vec_act;
+
+                wr_rst_mem_act: for(int j = 0; j < W_FT_OUT; j++){
+                    #pragma HLS UNROLL
+
+                    #ifdef ACTIVATION
+                        rst_vec_act[j] = relu(rst_vec[j]);
+                    #else
+                        rst_vec_act[j] = rst_vec[j];
+                    #endif
+                }
+
+                rst_mat[n * FEATS_OUT / W_FT_OUT + i] = rst_vec_act;
             }
         }
     }
@@ -618,15 +484,12 @@ void compute_one_node(vec_ft_in_t ft_in_mat[N_NODES*FEATS_IN/W_FT_IN],
                     vec_ft_out_t rst_mat[N_NODES*FEATS_OUT/W_FT_OUT]){
     #pragma HLS dataflow
 
-
     // read nod_src from memory
-    hls::stream<node_t> nod_src_stream[6];
+    hls::stream<node_t> nod_src_stream[4];
     #pragma HLS stream variable=nod_src_stream[0] depth=5
     #pragma HLS stream variable=nod_src_stream[1] depth=6
     #pragma HLS stream variable=nod_src_stream[2] depth=7
     #pragma HLS stream variable=nod_src_stream[3] depth=8
-    #pragma HLS stream variable=nod_src_stream[4] depth=9
-    #pragma HLS stream variable=nod_src_stream[5] depth=10
     read_nod_src(nod_src, nidx_begin, nidx_end, nod_src_stream);
 
     // read edge_src from memory
@@ -639,22 +502,13 @@ void compute_one_node(vec_ft_in_t ft_in_mat[N_NODES*FEATS_IN/W_FT_IN],
     #pragma HLS stream variable=ft_in_agg_stream depth=10
     read_feat_in_agg(tmp_src_stream, ft_in_mat, nod_src_stream[1], nidx_begin, nidx_end, ft_in_agg_stream);
 
-    // aggregate features
-    hls::stream<vec_ft_in_t> ft_h_agg_stream;
-    #pragma HLS stream variable=ft_h_agg_stream depth=10
-    agg_feat_in(ft_in_agg_stream, nod_src_stream[2], nidx_begin, nidx_end, ft_h_agg_stream);
-
-    // update/apply phase for the aggrated results
-    hls::stream<vec_ft_out_full_t> rst_agg_p1_stream;
-    #pragma HLS stream variable=rst_agg_p1_stream depth=16
-    update_agg(w_array, ft_h_agg_stream, nidx_begin, nidx_end, nod_src_stream[3], rst_agg_p1_stream);
-
+    // fused aggregate + update + sum
     hls::stream<vec_ft_out_t> rst_agg_stream;
     #pragma HLS stream variable=rst_agg_stream depth=10
-    update_agg_sum(rst_agg_p1_stream, nidx_begin, nidx_end, nod_src_stream[4], rst_agg_stream);
+    agg_update_sum_fused(ft_in_agg_stream, nod_src_stream[2], w_array, nidx_begin, nidx_end, rst_agg_stream);
 
-    // write results to memory
-    write_rst_mem(rst_agg_stream, nidx_begin, nidx_end, nod_src_stream[5], rst_mat);
+    // write results to memory + activation
+    write_rst_mem(rst_agg_stream, nidx_begin, nidx_end, nod_src_stream[3], rst_mat);
 }
 
 // Compute results for all nodes
