@@ -1,5 +1,10 @@
 # GNNHLS
 
+## Kernel Data
+
+Data required to run kernels is available on [Hugging Face](https://huggingface.co/Ri-Hong/GNNHLS/tree/main). See [instructions](https://huggingface.co/Ri-Hong/GNNHLS/tree/main?clone=true) to clone. Copy the files to your `gnnhls/gcn/data` directory after cloning.
+
+
 ## Overview
 With the ever-growing popularity of Graph Neural Networks (GNNs), efficient GNN inference is gaining tremendous attention. Field-Programming Gate Arrays (FPGAs) are a promising execution platform due to their fine-grained parallelism, low-power consumption, reconfigurability, and concurrent execution. Even better, High-Level Synthesis (HLS) tools bridge the gap between the non-trivial FPGA development efforts and rapid emergence of new GNN models. To enable investigation into how effectively modern HLS tools can accelerate GNN inference, we present GNNHLS, a benchmark suite containing a [software stack](./benchmarking-gnns) extended from [this work](https://arxiv.org/pdf/2003.00982.pdf) for data generation and baseline deployment (i.e., CPU and GPU platforms) and FPGA implementations of 6 well-tuned [GNN HLS kernels](./gnnhls) (i.e., GCN, GraphSage, GIN, GAT, MoNet, and GatedGCN). We use the datasets in [Open Graph Benchmarks (OGB)](https://ogb.stanford.edu/docs/dataset_overview/).
 
