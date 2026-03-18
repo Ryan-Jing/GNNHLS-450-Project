@@ -37,13 +37,14 @@ class GCNLayer(nn.Module):
         Param: [in_dim, out_dim]
     """
     # def __init__(self, in_dim, out_dim, activation, dropout, batch_norm, residual=False, dgl_builtin=False):
-    def __init__(self, in_dim, out_dim, activation, dropout, batch_norm, residual=False, dgl_builtin=True):
+    def __init__(self, in_dim, out_dim, activation, dropout, batch_norm, residual=False, dgl_builtin=True, qat=False):
         super().__init__()
         self.in_channels = in_dim
         self.out_channels = out_dim
         self.batch_norm = batch_norm
         self.residual = residual
         self.dgl_builtin = dgl_builtin
+        self.qat = qat
         
         if in_dim != out_dim:
             self.residual = False
@@ -60,7 +61,25 @@ class GCNLayer(nn.Module):
         else:
             self.conv = GraphConv(in_dim, out_dim, allow_zero_in_degree=True)
 
+        if self.qat:
+            from layers.fake_quantize import FakeQuantizeInt8
+            self.fake_quant_weight = FakeQuantizeInt8(is_weight=True)
+            self.fake_quant_output = FakeQuantizeInt8(is_weight=False)
+
         
+    def _conv_with_fake_quant(self, g, feature):
+        """Run GraphConv with fake-quantized weights (STE via data swap)."""
+        with torch.no_grad():
+            orig_weight = self.conv.weight.data.clone()
+            weight_fq = self.fake_quant_weight(self.conv.weight)
+            self.conv.weight.data.copy_(weight_fq.data)
+
+        h = self.conv(g, feature)
+
+        with torch.no_grad():
+            self.conv.weight.data.copy_(orig_weight)
+        return h
+
     def forward(self, g, feature):
         h_in = feature   # to be used for residual connection
 
@@ -69,6 +88,8 @@ class GCNLayer(nn.Module):
             g.update_all(msg, reduce)
             g.apply_nodes(func=self.apply_mod)
             h = g.ndata['h'] # result of graph convolution
+        elif self.qat:
+            h = self._conv_with_fake_quant(g, feature)
         else:
             h = self.conv(g, feature)
         
@@ -80,6 +101,9 @@ class GCNLayer(nn.Module):
         
         if self.residual:
             h = h_in + h # residual connection
+
+        if self.qat:
+            h = self.fake_quant_output(h)
             
         h = self.dropout(h)
         return h
@@ -93,16 +117,10 @@ class GCNLayer(nn.Module):
             g.update_all(msg, reduce)
             g.apply_nodes(func=self.apply_mod)
             h = g.ndata['h'] # result of graph convolution
+        elif self.qat:
+            h = self._conv_with_fake_quant(g, feature)
         else:
-            # save input features of the network
-            # print("features info:", feature.dtype, feature.size())
-            # np.savetxt("./saved_data/CSL_graph_classification/gcn/features.txt", feature.numpy(), delimiter=',', fmt="%.15f")
-
             h = self.conv(g, feature)
-
-            # save results of first layer of the network
-            # print("h2_l0 info:", h.dtype, h.size())
-            # np.savetxt("./saved_data/CSL_graph_classification/gcn/h2_l0.txt", h.numpy(), delimiter=',', fmt="%.15f")
         
         if self.batch_norm:
             h = self.batchnorm_h(h) # batch normalization  
@@ -112,6 +130,9 @@ class GCNLayer(nn.Module):
         
         if self.residual:
             h = h_in + h # residual connection
+
+        if self.qat:
+            h = self.fake_quant_output(h)
             
         h = self.dropout(h)
         return h

@@ -331,6 +331,7 @@ def main():
     parser.add_argument('--pos_enc_dim', help="Please give a value for pos_enc_dim")
 
     parser.add_argument('--infer_only', action='store_true', default=False, help="indicate only inference without train if used; otherwise inference with training")
+    parser.add_argument('--qat', action='store_true', default=False, help="Enable int8 quantization-aware training (QAT)")
     args = parser.parse_args()
     with open(args.config) as f:
         config = json.load(f)
@@ -439,6 +440,9 @@ def main():
     net_params['in_dim_edge'] = dataset.all[0][0].edata['feat'].size(-1)
     net_params['n_classes'] = int(dataset.all.num_classes)
     net_params['out_dir'] = out_dir
+    net_params['qat'] = args.qat
+    if args.qat:
+        print("[!] Quantization-Aware Training (int8) enabled.")
 
     # print("net_params['n_classes']", net_params['n_classes'], type(net_params['n_classes']))
     # exit()

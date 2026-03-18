@@ -30,6 +30,7 @@ class GCNNet(nn.Module):
         self.batch_norm = net_params['batch_norm']
         self.residual = net_params['residual']
         self.pos_enc = net_params['pos_enc']
+        self.qat = net_params.get('qat', False)
         if self.pos_enc:
             pos_enc_dim = net_params['pos_enc_dim']
             self.embedding_pos_enc = nn.Linear(pos_enc_dim, hidden_dim)
@@ -38,19 +39,25 @@ class GCNNet(nn.Module):
             print("net_params['in_dim']", net_params['in_dim'], type(net_params['in_dim']))
             self.embedding_h = nn.Linear(in_dim, hidden_dim)
         
-                
+
         self.in_feat_dropout = nn.Dropout(in_feat_dropout)
         
         #self.embedding_h = nn.Embedding(num_node_type, hidden_dim)
         
         self.layers = nn.ModuleList([GCNLayer(hidden_dim, hidden_dim, F.relu,
-                                              dropout, self.batch_norm, self.residual) for _ in range(n_layers-1)])
+                                              dropout, self.batch_norm, self.residual,
+                                              qat=self.qat) for _ in range(n_layers-1)])
         self.layers.append(GCNLayer(hidden_dim, out_dim, F.relu,
-                                    dropout, self.batch_norm, self.residual))
+                                    dropout, self.batch_norm, self.residual,
+                                    qat=self.qat))
         self.MLP_layer = MLPReadout(out_dim, n_classes)
 
         # dir for saved data(/param)
         self.out_dir = net_params['out_dir']
+
+        if self.qat:
+            from layers.fake_quantize import FakeQuantizeInt8
+            self.fake_quant_input = FakeQuantizeInt8(is_weight=False)
         
 
     def forward(self, g, h, e, pos_enc=None):
@@ -59,9 +66,11 @@ class GCNNet(nn.Module):
         if self.pos_enc:
             h = self.embedding_pos_enc(pos_enc) 
         else:
-            # print("h", h, h.size())
             h = self.embedding_h(h.float())
         h = self.in_feat_dropout(h)
+
+        if self.qat:
+            h = self.fake_quant_input(h)
         
         for conv in self.layers:
             h = conv(g, h)
@@ -86,6 +95,9 @@ class GCNNet(nn.Module):
         else:
             h = self.embedding_h(h.float())
         h = self.in_feat_dropout(h)
+
+        if self.qat:
+            h = self.fake_quant_input(h)
         
         # save input features of the network
         print("features info:", h.dtype, h.size())
@@ -97,6 +109,9 @@ class GCNNet(nn.Module):
             torch.cuda.synchronize()
         else:
             np.savetxt(self.out_dir + "data/features.txt", h.numpy(), delimiter=',', fmt="%.7f")
+
+        if self.qat:
+            self._save_qat_data(h)
         
         if(h.is_cuda):
             print("synchronizing CPU and GPU...")
@@ -125,7 +140,6 @@ class GCNNet(nn.Module):
 
         # save results of first layer of the network
         print("h2_l0 info:", h.dtype, h.size())
-        # print("h2_l0", h)
         if(h.is_cuda):
             print("transfering tensor from GPU to CPU...")
             torch.cuda.synchronize()
@@ -145,6 +159,36 @@ class GCNNet(nn.Module):
             hg = dgl.mean_nodes(g, 'h')  # default readout is mean nodes
             
         return self.MLP_layer(hg)
+
+    def _save_qat_data(self, h_features):
+        """Export int8 weights, features, and scale factors for FPGA deployment."""
+        print("Saving QAT quantization data...")
+
+        input_scale = self.fake_quant_input.scale.item()
+        weight_scale = self.layers[0].fake_quant_weight.scale.item()
+        output_scale = self.layers[0].fake_quant_output.scale.item()
+
+        # Save scale factors
+        with open(self.out_dir + "data/qat_scales.txt", 'w') as f:
+            f.write(f"input_scale={input_scale}\n")
+            f.write(f"weight_scale={weight_scale}\n")
+            f.write(f"output_scale={output_scale}\n")
+        print(f"  input_scale={input_scale}, weight_scale={weight_scale}, output_scale={output_scale}")
+
+        # Save int8 features
+        h_cpu = h_features.detach().cpu()
+        features_int8 = torch.round(h_cpu / input_scale).clamp(-128, 127).to(torch.int8)
+        np.savetxt(self.out_dir + "data/features_int8.txt",
+                   features_int8.numpy(), delimiter=',', fmt='%d')
+        print(f"  Saved features_int8.txt: {features_int8.shape}")
+
+        # Save int8 weights
+        weight = self.layers[0].conv.weight.detach().cpu()
+        weight_fq = self.layers[0].fake_quant_weight(self.layers[0].conv.weight)
+        weight_int8 = torch.round(weight_fq.detach().cpu() / weight_scale).clamp(-128, 127).to(torch.int8)
+        np.savetxt(self.out_dir + "data/weight_l0_int8.txt",
+                   weight_int8.numpy(), delimiter=',', fmt='%d')
+        print(f"  Saved weight_l0_int8.txt: {weight_int8.shape}")
     
     def loss(self, pred, label):
         # print("pred", pred, pred.size())
