@@ -15,7 +15,7 @@ Utility Functions
  * 
  * @return No return, fill in rst with vaules
  */
-int read_2d_mat(const char* fn, uint64_t row_num, uint64_t col_num, uint64_t line_size, TYPE* rst)
+int read_2d_mat(char* fn, uint64_t row_num, uint64_t col_num, uint64_t line_size, TYPE* rst)
 {
     using namespace std;
 
@@ -79,7 +79,7 @@ int read_2d_mat(const char* fn, uint64_t row_num, uint64_t col_num, uint64_t lin
  * 
  * @return No return, fill in rst with vaules
  */
-int read_2d_mat_int(const char* fn, uint64_t row_num, uint64_t col_num, uint64_t line_size, int* rst)
+int read_2d_mat_int(char* fn, uint64_t row_num, uint64_t col_num, uint64_t line_size, int* rst)
 {
     using namespace std;
 
@@ -138,7 +138,7 @@ int read_2d_mat_int(const char* fn, uint64_t row_num, uint64_t col_num, uint64_t
  * 
  * @note Usually to read graph info, e.g. vertex index and edge index
  */
-int read_2d_mat_ui64(const char* fn, uint64_t row_num, uint64_t col_num, uint64_t line_size, uint64_t* rst)
+int read_2d_mat_ui64(char* fn, uint64_t row_num, uint64_t col_num, uint64_t line_size, uint64_t* rst)
 {
     using namespace std;
 
@@ -402,3 +402,4 @@ int check_rst_v2_graph(uint64_t* indptr, uint64_t n_nodes, uint64_t feats_out, T
     return 0;
 
 }
+

@@ -2,3 +2,8 @@ GNNGLSSupplementalMaterial.pdf
 .DS_Store
 */.DS_Store
 **/.DS_Store
+gnnhls/gcn/data/*
+!gnnhls/gcn/data/defines_gcn.h
+gnnhls/gcn_opt/data/*
+!gnnhls/gcn_opt/data/defines_gcn.h
+benchmarking-gnns/out_new/

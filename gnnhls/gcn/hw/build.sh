@@ -1,8 +1,8 @@
 #!/bin/bash
 
-# Exit when any command fails
-set -e
+# Exit on errors and fail if any command in a pipe fails.
+set -euo pipefail
 
-# Make sure everything is up to date
-make all | tee report_build.log
-
+# Build the hardware artifact for deployment to the KV260.
+# The host executable should be built separately on the target or cross-compiled for aarch64.
+make gcn.xclbin | tee report_build.log

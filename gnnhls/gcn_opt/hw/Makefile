@@ -1,7 +1,5 @@
 APP_NAME=gcn
 
-.PHONY: all host clean check-xrt
-
 HOST_PATH=../host
 HOST_SRCS=$(HOST_PATH)/host.cpp $(HOST_PATH)/util.cpp
 HOST_FILE=$(HOST_SRCS) $(HOST_PATH)/util.h ../defines.h ../data/defines_$(APP_NAME).h
@@ -33,23 +31,18 @@ CFG_FILE=$(CFG_PATH)/kv260.cfg
 
 TARGET=hw
 
-all: $(APP_NAME).xclbin
+all: app.exe $(APP_NAME).xclbin
 
-host: app.exe
-
-app.exe: check-xrt $(HOST_FILE)
+app.exe: $(HOST_FILE)
 	g++ -Wall -g -std=c++11 $(HOST_SRCS) -o app.exe \
 		-I${XILINX_XRT}/include/ \
 		-L${XILINX_XRT}/lib/ -lOpenCL -pthread -lrt -lstdc++
-
-check-xrt:
-	@test -n "${XILINX_XRT}" || (echo "XILINX_XRT is not set. Build the host app on the KV260, or export XILINX_XRT before running 'make host'."; exit 1)
 	
 $(APP_NAME).xo: $(KRNL_FILE)
 	v++ -c -t ${TARGET} --config $(CFG_FILE) -k $(APP_NAME)_hls -I$(KRNL_PATH) -I../ -I../data $(KRNL_SRCS) -o $(APP_NAME).xo 
 
 $(APP_NAME).xclbin: ./$(APP_NAME).xo
-	LD_PRELOAD=/home/tbadros/miniconda3/pkgs/openssl-1.1.1w-hd590300_0/lib/libcrypto.so.1.1 PATH=/home/tbadros/Downloads/Vitis_2025/Vitis/bin:$$PATH v++ -l -t ${TARGET} --config $(CFG_FILE) ./$(APP_NAME).xo -o $(APP_NAME).xclbin --jobs 8
+	LD_PRELOAD=/home/tbadros/miniconda3/pkgs/openssl-1.1.1w-hd590300_0/lib/libcrypto.so.1.1 PATH=/home/tbadros/Downloads/Vitis_2025/Vitis/bin:$$PATH LD_PRELOAD=/home/tbadros/miniconda3/pkgs/openssl-1.1.1w-hd590300_0/lib/libcrypto.so.1.1 PATH=/home/tbadros/Downloads/Vitis_2025/Vitis/bin:$$PATH v++ -l -t ${TARGET} --config $(CFG_FILE) ./$(APP_NAME).xo -o $(APP_NAME).xclbin --jobs 8
 
 clean:
 	rm -rf $(APP_NAME)* app.exe *json *csv *log *summary _x .run .Xil .ipcache *.jou src

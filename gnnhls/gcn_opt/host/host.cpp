@@ -34,7 +34,6 @@ EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 #include <unistd.h>
 #include <iostream>
 #include <fstream>
-#include <string>
 #include <CL/cl2.hpp>
 
 #include "util.h"
@@ -42,8 +41,6 @@ EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 // Forward declaration of utility functions included at the end of this file
 std::vector<cl::Device> get_xilinx_devices();
 char *read_binary_file(const std::string &xclbin_file_name, unsigned &nb);
-std::string join_path(const std::string &dir, const std::string &file_name);
-std::string resolve_data_dir(int argc, char **argv);
 
 // define number of CUs
 int num_cu = 1;
@@ -57,15 +54,9 @@ int main(int argc, char **argv)
     // Step 1: Initialize the OpenCL environment
     // ------------------------------------------------------------------------------------
     cl_int err;
-    std::string binaryFile = (argc >= 2) ? argv[1] : "gcn.xclbin";
-    std::string data_dir = resolve_data_dir(argc, argv);
+    std::string binaryFile = (argc != 2) ? "gcn.xclbin" : argv[1];
     unsigned fileBufSize;
     std::vector<cl::Device> devices = get_xilinx_devices();
-    if (devices.empty())
-    {
-        std::cout << "ERROR: Failed to find any Xilinx accelerator devices" << std::endl;
-        return EXIT_FAILURE;
-    }
     devices.resize(1);
     cl::Device device = devices[0];
     cl::Context context(device, NULL, NULL, NULL, &err);
@@ -74,7 +65,6 @@ int main(int argc, char **argv)
     cl::Program program(context, devices, bins, NULL, &err);
     // cl::CommandQueue q(context, device, CL_QUEUE_PROFILING_ENABLE, &err);
     cl::CommandQueue q(context, device, CL_QUEUE_PROFILING_ENABLE | CL_QUEUE_OUT_OF_ORDER_EXEC_MODE_ENABLE, &err);
-    std::cout << "INFO: Using data directory '" << data_dir << "'" << std::endl;
 
     // cl::Kernel krnl_vector_add(program, "gcn_hls", &err);
     // cl::Kernel krnl_gnn(program, "gcn_hls", &err);
@@ -178,16 +168,10 @@ int main(int argc, char **argv)
 
 
     // Initialize the vectors used in the test
-    std::string indptr_path = join_path(data_dir, "csr_indptr_trans.txt");
-    std::string indices_path = join_path(data_dir, "csr_indices.txt");
-    std::string features_path = join_path(data_dir, "features.txt");
-    std::string weight_path = join_path(data_dir, "weight_l0.txt");
-    std::string golden_path = join_path(data_dir, "h2_l0.txt");
-
-    read_2d_mat_ui64(indptr_path.c_str(), 2*N_NODES, 1, 1024, indptr);
-    read_2d_mat_ui64(indices_path.c_str(), N_EDGES, 1, 1024, indices);
-    read_2d_mat(features_path.c_str(), N_NODES, FEATS_IN, FEATS_IN*32, feats);
-    read_2d_mat(weight_path.c_str(), N_NODES, FEATS_OUT, FEATS_OUT*32, weight);
+    read_2d_mat_ui64("./data/csr_indptr_trans.txt", 2*N_NODES, 1, 1024, indptr);
+    read_2d_mat_ui64("./data/csr_indices.txt", N_EDGES, 1, 1024, indices);
+    read_2d_mat("./data/features.txt", N_NODES, FEATS_IN, FEATS_IN*32, feats);
+    read_2d_mat("./data/weight_l0.txt", N_NODES, FEATS_OUT, FEATS_OUT*32, weight);
 
     // initialize the result mem
     init_2d_mat(N_NODES, FEATS_OUT, 0, rst_mat);
@@ -253,7 +237,7 @@ int main(int argc, char **argv)
     posix_memalign(&cor_rst_void, 4096, N_NODES*FEATS_OUT * sizeof(TYPE));
     TYPE* cor_rst = (TYPE*)cor_rst_void;
 
-    read_2d_mat(golden_path.c_str(), N_NODES, FEATS_OUT, FEATS_OUT*32, cor_rst);
+    read_2d_mat("./data/h2_l0.txt", N_NODES, FEATS_OUT, FEATS_OUT*32, cor_rst);
     // check_rst(N_NODES*FEATS_OUT, rst_mat, cor_rst);
     // check_rst_v2(N_NODES, FEATS_OUT, rst_mat, cor_rst);
     check_rst_v2_graph(indptr, N_NODES, FEATS_OUT, rst_mat, cor_rst);
@@ -289,52 +273,6 @@ std::vector<cl::Device> get_xilinx_devices()
     std::vector<cl::Device> devices;
     err = platform.getDevices(CL_DEVICE_TYPE_ACCELERATOR, &devices);
     return devices;
-}
-
-std::string join_path(const std::string &dir, const std::string &file_name)
-{
-    if (dir.empty())
-    {
-        return file_name;
-    }
-
-    if (dir.back() == '/')
-    {
-        return dir + file_name;
-    }
-
-    return dir + "/" + file_name;
-}
-
-std::string resolve_data_dir(int argc, char **argv)
-{
-    std::vector<std::string> candidates;
-
-    if (argc >= 3 && argv[2] != nullptr && argv[2][0] != '\0')
-    {
-        candidates.emplace_back(argv[2]);
-    }
-
-    const char *env_data_dir = std::getenv("GNNHLS_DATA_DIR");
-    if (env_data_dir != nullptr && env_data_dir[0] != '\0')
-    {
-        candidates.emplace_back(env_data_dir);
-    }
-
-    candidates.emplace_back("./data");
-    candidates.emplace_back("../data");
-    candidates.emplace_back("../../data");
-
-    for (const std::string &candidate : candidates)
-    {
-        if (access(join_path(candidate, "csr_indptr_trans.txt").c_str(), R_OK) == 0)
-        {
-            return candidate;
-        }
-    }
-
-    std::cout << "ERROR: Failed to locate the GNN data directory. Pass it as argv[2] or set GNNHLS_DATA_DIR." << std::endl;
-    exit(EXIT_FAILURE);
 }
 
 char *read_binary_file(const std::string &xclbin_file_name, unsigned &nb)
