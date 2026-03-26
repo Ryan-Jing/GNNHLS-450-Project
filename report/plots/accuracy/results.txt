@@ -1,0 +1,12 @@
+500 Epochs
+Baseline: 
+TEST ACCURACY averaged: 96.912
+ with test acc s.d. 0.000
+TRAIN ACCURACY averaged: 96.441
+ with train s.d. 0.000
+Quantized: 
+FINAL RESULTS
+TEST ACCURACY averaged: 96.888
+ with test acc s.d. 0.000
+TRAIN ACCURACY averaged: 96.559
+ with train s.d. 0.000

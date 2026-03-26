@@ -1,0 +1,70 @@
+1  Goal
+
+The goal of this project is to help students have a better understanding of principle concepts in computer architecture and extend their knowledge from lecture contents to real-world problems. Students will get hands-on experience in designing architectural systems.
+2  Project Structure
+
+Each project will be based on a recent research paper in the field of computer architecture. Students will first reproduce the key results in the paper by running the open-source codebase from the authors of the paper and then improve the proposed mechanism and demonstrate the improved results. The project has the following key dates and submissions.
+2.1  Proposal: February 10, 2026
+
+Identify the research problem and existing paper(s) that the project is based on. The proposal will be a 2-page document with the following sections (format is not strictly enforced).
+Introduction and background: Introduce the research topic of this project. Describe any background knowledge that this work will be based on.
+Related work: Discuss the prior paper(s) this project will be based on and why it is insufficient.
+Proposed ideas: Describe the high-level idea of the project. Highlight the key technical difficulties and contributions this project will make.
+Tasks and timeline: Break down the proposed ideas into tasks and describe when each task is expected to be completed.
+2.2  Checkpoint Report: March 5, 2026
+
+The goal is to make sure the project is on the right track. The checkpoint report will be a 2-page document with the following sections.
+Current progress: mention which tasks have been completed and which are in progress.
+Proposal updates (optional): Sometimes certain proposed ideas turn out to be not working after conducting experiments. If the group project needs to change the goals, ideas, or scope, any changes should be included in the checkpoint report. Major changes in the project direction need to be approved by the instructor.
+Key results: Demonstrate any key results the group has achieved.
+Next steps: discuss the next steps of this project, including the remaining steps and how you will approach them.
+2.3  Final Report: March 31, 2026 (before class)
+
+The final report will be at least 4 pages, with the following format:
+Letter page: 8.5 ✕ 11 inches.
+The main body in font size 10.
+Single-spaced.
+2-column.
+Page margins 1 inch.
+The recommended ACM template is available on Overleaf (in LaTeX). The same template is also available in Word. Relevant references should be included in the report. The final report will look like a conference paper, with the following sections:
+Abstract: a one- or two-paragraph summary of the whole project.
+Introduction: a longer summary of the project that covers the background, prior research works, high-level ideas of this project, and the key results.
+Background and Motivation: Describe any background knowledge the audience needs to know before going to your project. Highlight why the research problem is important, and why existing work your project is based on is insufficient, i.e., its weaknesses.
+High-level Ideas: Describe the high-level ideas and designs of the project.
+Implementation/mechanism: expand the ideas and describe the implementation details.
+Evaluation: Describe the evaluation methodology (simulated/real system of the evaluation, software environment, etc.) and the results.
+Conclusion: Conclude the project by reiterating the research problem and contributions of this project.
+References: References should be included at the end of the documents (at least 5 references).
+Tips: The research paper your project is based on is usually a good example of a research report. Usually, a research paper is much longer than this project report but the structures are largely the same.
+2.4  Final Presentation: March 31 and April 2, 2026
+
+The final presentation will be around 10 minutes (plus 2-minute Q&A). Every student in the group should present a fraction of the slides. The presentation includes the following sections: background and motivation, high-level ideas, implementation/mechanism, evaluation, and conclusion. The content of each section in the presentation is the same as the final report but in a more visualized way.
+3  Topics
+
+The topics include both conventional architectural topics and new/emerging techniques, such as:
+Microarchitecture
+Branch prediction
+Caching
+Memory system
+Accelerators
+Heterogeneous processor
+Hardware-related security
+Architectural support for cloud systems
+New memory technologies
+Students may propose other topics in the scope of computer architecture. If you are not sure about the relevance, please contact the instructor/TA.
+4  Project Groups
+
+This course project is a group project. Each group consists of 4 students. Having a group of more students is possible but the expectations will be higher than normal groups. Students who want to have a group with more than 4 students need to email both the instructor and TA for approval. The email should include a brief description of the scope and deliverables of your project. Only one student in the group needs to send the email. For normal groups, no extra approval is needed. Please include the names and email addresses of all group members in the proposal. The instructor will track the groups using the proposal.
+5  Grading
+
+The final grading will be based on the final report and presentation. The following is a breakdown of the course project.
+Completion of the proposed plan: 40%
+Technical difficulty: 20%
+Report: 20%
+Presentation: 20%
+The project grade will be available after the final presentation on LEARN.
+6  Academic Integrity
+
+This course strictly follows the academic integrity policy of the University of Waterloo. Any academic misconduct will be reported to the Office of Academic Integrity. The following points are specific to this course project.
+Collaboration policy: Students within each project group should tightly collaborate on the course project. Ideas for the course project can be inspired by other articles and through discussions with other students. However, the implementation, evaluation, presentation, and report need to be completed independently by each group.
+Generative AI: The content of any reports or slides should be completed by the students. Students may choose to use GenAI tools like ChatGPT and Gemini to improve their writing. When GenAI is used, the report needs to clearly acknowledge how it was used (in an acknowledgement section) and attach the original report without GenAI-suggested edits. However, grading will be based only on the final report.
