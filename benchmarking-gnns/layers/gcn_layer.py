@@ -37,7 +37,18 @@ class GCNLayer(nn.Module):
         Param: [in_dim, out_dim]
     """
     # def __init__(self, in_dim, out_dim, activation, dropout, batch_norm, residual=False, dgl_builtin=False):
-    def __init__(self, in_dim, out_dim, activation, dropout, batch_norm, residual=False, dgl_builtin=True, qat=False):
+    def __init__(
+        self,
+        in_dim,
+        out_dim,
+        activation,
+        dropout,
+        batch_norm,
+        residual=False,
+        dgl_builtin=True,
+        qat=False,
+        qat_power_of_2_scale=True,
+    ):
         super().__init__()
         self.in_channels = in_dim
         self.out_channels = out_dim
@@ -45,6 +56,7 @@ class GCNLayer(nn.Module):
         self.residual = residual
         self.dgl_builtin = dgl_builtin
         self.qat = qat
+        self.qat_power_of_2_scale = qat_power_of_2_scale
         
         if in_dim != out_dim:
             self.residual = False
@@ -63,8 +75,14 @@ class GCNLayer(nn.Module):
 
         if self.qat:
             from layers.fake_quantize import FakeQuantizeInt8
-            self.fake_quant_weight = FakeQuantizeInt8(is_weight=True)
-            self.fake_quant_output = FakeQuantizeInt8(is_weight=False)
+            self.fake_quant_weight = FakeQuantizeInt8(
+                is_weight=True,
+                power_of_2_scale=self.qat_power_of_2_scale,
+            )
+            self.fake_quant_output = FakeQuantizeInt8(
+                is_weight=False,
+                power_of_2_scale=self.qat_power_of_2_scale,
+            )
 
         
     def _conv_with_fake_quant(self, g, feature):

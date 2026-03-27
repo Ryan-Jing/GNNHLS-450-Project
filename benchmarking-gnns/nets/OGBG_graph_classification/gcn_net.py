@@ -31,6 +31,7 @@ class GCNNet(nn.Module):
         self.residual = net_params['residual']
         self.pos_enc = net_params['pos_enc']
         self.qat = net_params.get('qat', False)
+        self.qat_power_of_2_scale = net_params.get('qat_power_of_2_scale', True)
         if self.pos_enc:
             pos_enc_dim = net_params['pos_enc_dim']
             self.embedding_pos_enc = nn.Linear(pos_enc_dim, hidden_dim)
@@ -46,10 +47,12 @@ class GCNNet(nn.Module):
         
         self.layers = nn.ModuleList([GCNLayer(hidden_dim, hidden_dim, F.relu,
                                               dropout, self.batch_norm, self.residual,
-                                              qat=self.qat) for _ in range(n_layers-1)])
+                                              qat=self.qat,
+                                              qat_power_of_2_scale=self.qat_power_of_2_scale) for _ in range(n_layers-1)])
         self.layers.append(GCNLayer(hidden_dim, out_dim, F.relu,
                                     dropout, self.batch_norm, self.residual,
-                                    qat=self.qat))
+                                    qat=self.qat,
+                                    qat_power_of_2_scale=self.qat_power_of_2_scale))
         self.MLP_layer = MLPReadout(out_dim, n_classes)
 
         # dir for saved data(/param)
@@ -57,7 +60,10 @@ class GCNNet(nn.Module):
 
         if self.qat:
             from layers.fake_quantize import FakeQuantizeInt8
-            self.fake_quant_input = FakeQuantizeInt8(is_weight=False)
+            self.fake_quant_input = FakeQuantizeInt8(
+                is_weight=False,
+                power_of_2_scale=self.qat_power_of_2_scale,
+            )
         
 
     def forward(self, g, h, e, pos_enc=None):

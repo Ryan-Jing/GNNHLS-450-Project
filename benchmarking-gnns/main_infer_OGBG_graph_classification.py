@@ -332,6 +332,11 @@ def main():
 
     parser.add_argument('--infer_only', action='store_true', default=False, help="indicate only inference without train if used; otherwise inference with training")
     parser.add_argument('--qat', action='store_true', default=False, help="Enable int8 quantization-aware training (QAT)")
+    parser.add_argument(
+        '--qat_power_of_2_scale',
+        default=None,
+        help="Use power-of-2 constrained quant scale in QAT (True/False).",
+    )
     args = parser.parse_args()
     with open(args.config) as f:
         config = json.load(f)
@@ -441,8 +446,13 @@ def main():
     net_params['n_classes'] = int(dataset.all.num_classes)
     net_params['out_dir'] = out_dir
     net_params['qat'] = args.qat
+    if args.qat_power_of_2_scale is not None:
+        net_params['qat_power_of_2_scale'] = True if args.qat_power_of_2_scale == 'True' else False
+    else:
+        net_params['qat_power_of_2_scale'] = True
     if args.qat:
         print("[!] Quantization-Aware Training (int8) enabled.")
+        print(f"[!] QAT power-of-2 scale: {net_params['qat_power_of_2_scale']}")
 
     # print("net_params['n_classes']", net_params['n_classes'], type(net_params['n_classes']))
     # exit()
